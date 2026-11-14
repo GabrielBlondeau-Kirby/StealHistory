@@ -191,31 +191,34 @@ frame:SetBackdrop({
 frame:Hide()
 tinsert(UISpecialFrames, "StealHistoryFrame")  -- Échap ferme la fenêtre
 
--- Portrait rond en haut à gauche, comme le cadre de butin.
-local portrait = frame:CreateTexture(nil, "OVERLAY")
+-- Bandeau du titre en trois morceaux (bouts fixes, milieu étiré) : il
+-- s'élargit avec le texte sans déformer ses extrémités.
+local HEADER_TEX = "Interface\\DialogFrame\\UI-DialogBox-Header"
+local headerFrame = CreateFrame("Frame", nil, frame)  -- au-dessus de la bordure de la fenêtre
+headerFrame:SetAllPoints()
+headerFrame:SetFrameLevel(frame:GetFrameLevel() + 10)
+-- Icône en haut à gauche, comme le cadre de butin.
+local portrait = headerFrame:CreateTexture(nil, "OVERLAY")
 portrait:SetSize(46, 46)
 portrait:SetPoint("TOPLEFT", -14, 14)
 portrait:SetTexture(ICON)  -- icône carrée telle quelle, sans cercle
 
--- Bandeau du titre en trois morceaux (bouts fixes, milieu étiré) : il
--- s'élargit avec le texte sans déformer ses extrémités.
-local HEADER_TEX = "Interface\\DialogFrame\\UI-DialogBox-Header"
-local header = frame:CreateTexture(nil, "ARTWORK")
+local header = headerFrame:CreateTexture(nil, "ARTWORK")
 header:SetTexture(HEADER_TEX)
 header:SetTexCoord(0.31, 0.67, 0, 0.63)
 header:SetSize(100, 40)
 header:SetPoint("TOP", 12, 12)
-local headerL = frame:CreateTexture(nil, "ARTWORK")
+local headerL = headerFrame:CreateTexture(nil, "ARTWORK")
 headerL:SetTexture(HEADER_TEX)
 headerL:SetTexCoord(0.21, 0.31, 0, 0.63)
 headerL:SetSize(30, 40)
 headerL:SetPoint("RIGHT", header, "LEFT")
-local headerR = frame:CreateTexture(nil, "ARTWORK")
+local headerR = headerFrame:CreateTexture(nil, "ARTWORK")
 headerR:SetTexture(HEADER_TEX)
 headerR:SetTexCoord(0.67, 0.77, 0, 0.63)
 headerR:SetSize(30, 40)
 headerR:SetPoint("LEFT", header, "RIGHT")
-local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+local title = headerFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 title:SetPoint("TOP", header, "TOP", 0, -14)
 local TITLE = L.TITLE
 
