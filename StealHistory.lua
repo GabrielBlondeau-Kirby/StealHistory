@@ -186,6 +186,20 @@ local empty = frame:CreateFontString(nil, "OVERLAY", "GameFontDisable")
 empty:SetPoint("TOP", 0, -50)
 empty:SetText(T("Aucun vol pour l'instant.", "Nothing stolen yet."))
 
+-- Somme en pièces avec icônes. GetCoinTextureString n'existe plus sur les
+-- clients récents (déplacée dans C_CurrencyInfo) : on prend ce qui existe.
+local COIN = "|TInterface\\MoneyFrame\\UI-%sIcon:0:0:2:0|t"
+local function Coins(c)
+    local f = (C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString) or GetCoinTextureString
+    if f then return f(c) end
+    local g, s, k = math.floor(c / 10000), math.floor(c / 100) % 100, c % 100
+    local out = {}
+    if g > 0 then out[#out + 1] = g .. COIN:format("Gold") end
+    if s > 0 then out[#out + 1] = s .. COIN:format("Silver") end
+    if k > 0 or #out == 0 then out[#out + 1] = k .. COIN:format("Copper") end
+    return table.concat(out, " ")
+end
+
 local rows = {}
 
 local function RowEnter(self)
@@ -195,7 +209,7 @@ local function RowEnter(self)
     if e.link then
         GameTooltip:SetHyperlink(e.link)
     else
-        GameTooltip:AddLine(GetCoinTextureString(e.money), 1, 1, 1)
+        GameTooltip:AddLine(Coins(e.money), 1, 1, 1)
     end
     GameTooltip:AddLine(" ")
     GameTooltip:AddDoubleLine(e.target or "?", date("%d/%m %H:%M", e.time), 0.6, 0.6, 0.6, 0.6, 0.6, 0.6)
@@ -264,7 +278,7 @@ Refresh = function()
             r.count:SetText((e.count or 1) > 1 and e.count or "")
         else
             r.icon:SetTexture(COIN_ICON)
-            r.name:SetText(GetCoinTextureString(e.money))
+            r.name:SetText(Coins(e.money))
             r.name:SetTextColor(1, 1, 1)
             r.count:SetText("")
         end
