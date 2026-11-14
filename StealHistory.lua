@@ -40,8 +40,7 @@ end
 local castAt, castTarget = 0, nil
 local stealing = false     -- fenêtre de butin du vol ouverte
 local windowEnd = 0        -- fin de la période où les messages du chat sont « volés »
-local slots = {}           -- contenu de la fenêtre de butin au moment de l'ouverture
-local moneyBefore = 0
+local moneyBefore = 0      -- argent au moment du sort
 
 local Refresh  -- fenêtre, définie plus bas
 
@@ -50,26 +49,22 @@ local function Add(entry)
     entry.time = time()
     table.insert(db.history, 1, entry)
     for i = #db.history, db.max + 1, -1 do db.history[i] = nil end
+    if entry.money then db.total = (db.total or 0) + entry.money end
     if Refresh then Refresh() end
+    if db.autoShow then StealHistoryFrame:Show() end
 end
 
+-- Vol en cours : sort lancé il y a moins de 2 s, fenêtre de butin ouverte,
+-- ou fermée depuis moins de 2 s (le chat et l'argent arrivent parfois après).
 local function InWindow()
-    return stealing or GetTime() < windowEnd
+    return stealing or GetTime() < windowEnd or GetTime() - castAt < 2
 end
 
+-- LOOT_READY (ramassage auto) puis LOOT_OPENED : le premier des deux suffit.
 local function OnLootOpened()
-    if GetTime() - castAt > 2 then return end
+    if stealing or GetTime() - castAt > 2 then return end
     castAt = 0
     stealing = true
-    moneyBefore = GetMoney()
-    wipe(slots)
-    for i = 1, GetNumLootItems() do
-        local link = GetLootSlotLink(i)
-        if link then
-            local icon, name, qty, _, quality = GetLootSlotInfo(i)
-            slots[i] = { link = link, icon = icon, name = name, count = qty or 1, quality = quality }
-        end
-    end
 end
 
 ---------------------------------------------------------------------------
@@ -91,6 +86,19 @@ local PATTERNS = {
     CHAT_MSG_LOOT  = { Pattern(LOOT_ITEM_SELF_MULTIPLE), Pattern(LOOT_ITEM_SELF) },
     CHAT_MSG_MONEY = { Pattern(YOU_LOOT_MONEY), Pattern(LOOT_MONEY_SPLIT) },
 }
+
+-- Les objets sont enregistrés depuis le message « Vous recevez le butin » :
+-- avec le ramassage auto, la fenêtre de butin est souvent déjà vide quand
+-- l'addon la lit, alors que le message arrive toujours.
+local function RecordLoot(msg)
+    for _, pat in ipairs(PATTERNS.CHAT_MSG_LOOT) do
+        local link, count = msg:match(pat)
+        if link and link:find("|Hitem:") then
+            Add({ link = link, count = tonumber(count) or 1 })
+            return
+        end
+    end
+end
 
 local function ChatFilter(_, event, msg, ...)
     if not db.replaceChat or not InWindow() then return false end
@@ -114,6 +122,21 @@ addFilter("CHAT_MSG_MONEY", ChatFilter)
 ---------------------------------------------------------------------------
 
 local ROW_H, WIDTH = 44, 240
+
+-- Somme en pièces avec icônes. GetCoinTextureString n'existe plus sur les
+-- clients récents (déplacée dans C_CurrencyInfo) : on prend ce qui existe.
+local COIN = "|TInterface\\MoneyFrame\\UI-%sIcon:0:0:2:0|t"
+local function Coins(c)
+    local f = (C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString) or GetCoinTextureString
+    if f then return f(c) end
+    local g, s, k = math.floor(c / 10000), math.floor(c / 100) % 100, c % 100
+    local out = {}
+    if g > 0 then out[#out + 1] = g .. COIN:format("Gold") end
+    if s > 0 then out[#out + 1] = s .. COIN:format("Silver") end
+    if k > 0 or #out == 0 then out[#out + 1] = k .. COIN:format("Copper") end
+    return table.concat(out, " ")
+end
+
 
 -- Le conteneur porte la visibilité / transparence ; la fenêtre, elle, garde
 -- son état ouvert / fermé choisi par le joueur.
@@ -177,7 +200,14 @@ header:SetSize(220, 64)
 header:SetPoint("TOP", 12, 12)
 local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 title:SetPoint("TOP", header, "TOP", 0, -14)
-title:SetText(T("Vols à la tire", "Pickpockets"))
+local TITLE = T("Vols à la tire", "Pickpockets")
+
+-- Titre + total des pièces volées à sa droite ; le bandeau suit la largeur.
+local function UpdateTitle()
+    local total = db.total or 0
+    title:SetText(total > 0 and (TITLE .. "   |cffffffff" .. Coins(total) .. "|r") or TITLE)
+    header:SetWidth(math.max(160, title:GetStringWidth() + 70))
+end
 
 local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
 close:SetPoint("TOPRIGHT", -4, -4)
@@ -185,20 +215,6 @@ close:SetPoint("TOPRIGHT", -4, -4)
 local empty = frame:CreateFontString(nil, "OVERLAY", "GameFontDisable")
 empty:SetPoint("TOP", 0, -50)
 empty:SetText(T("Aucun vol pour l'instant.", "Nothing stolen yet."))
-
--- Somme en pièces avec icônes. GetCoinTextureString n'existe plus sur les
--- clients récents (déplacée dans C_CurrencyInfo) : on prend ce qui existe.
-local COIN = "|TInterface\\MoneyFrame\\UI-%sIcon:0:0:2:0|t"
-local function Coins(c)
-    local f = (C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString) or GetCoinTextureString
-    if f then return f(c) end
-    local g, s, k = math.floor(c / 10000), math.floor(c / 100) % 100, c % 100
-    local out = {}
-    if g > 0 then out[#out + 1] = g .. COIN:format("Gold") end
-    if s > 0 then out[#out + 1] = s .. COIN:format("Silver") end
-    if k > 0 or #out == 0 then out[#out + 1] = k .. COIN:format("Copper") end
-    return table.concat(out, " ")
-end
 
 local rows = {}
 
@@ -271,10 +287,13 @@ Refresh = function()
         local e, r = db.history[i], Row(i)
         r.entry = e
         if e.link then
-            local q = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[e.quality or 1]
-            r.icon:SetTexture(e.icon or GetItemIcon(e.link) or ICON)
-            r.name:SetText(e.name or e.link)
-            r.name:SetTextColor(q and q.r or 1, q and q.g or 1, q and q.b or 1)
+            -- Nom et couleur de qualité tirés du lien : « |cffffffff|Hitem:…|h[Nom]|h|r ».
+            local color = e.link:match("|c(%x%x%x%x%x%x%x%x)") or "ffffffff"
+            local name = e.name or e.link:match("%[(.-)%]") or e.link
+            local icon = e.icon or (C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(e.link))
+                or (GetItemIcon and GetItemIcon(e.link))
+            r.icon:SetTexture(icon or ICON)
+            r.name:SetText("|c" .. color .. name .. "|r")
             r.count:SetText((e.count or 1) > 1 and e.count or "")
         else
             r.icon:SetTexture(COIN_ICON)
@@ -287,6 +306,7 @@ Refresh = function()
     end
     for i = n + 1, #rows do rows[i]:Hide() end
     empty:SetShown(n == 0)
+    UpdateTitle()
     frame:SetHeight(math.max(n, 1) * ROW_H + 50)
 end
 
@@ -408,7 +428,7 @@ local clear = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
 clear:SetSize(180, 24)
 clear:SetPoint("TOPLEFT", sScale, "BOTTOMLEFT", -4, -30)
 clear:SetText(T("Vider l'historique", "Clear history"))
-clear:SetScript("OnClick", function() wipe(db.history); Refresh() end)
+clear:SetScript("OnClick", function() wipe(db.history); db.total = 0; Refresh() end)
 
 local show = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
 show:SetSize(180, 24)
@@ -508,8 +528,9 @@ local ev = CreateFrame("Frame")
 ev:RegisterEvent("ADDON_LOADED")
 ev:RegisterUnitEvent("UNIT_SPELLCAST_SENT", "player")
 ev:RegisterUnitEvent("UNIT_SPELLCAST_FAILED", "player")
+ev:RegisterEvent("LOOT_READY")
 ev:RegisterEvent("LOOT_OPENED")
-ev:RegisterEvent("LOOT_SLOT_CLEARED")
+ev:RegisterEvent("CHAT_MSG_LOOT")
 ev:RegisterEvent("LOOT_CLOSED")
 ev:RegisterEvent("PLAYER_MONEY")
 ev:RegisterEvent("PLAYER_REGEN_DISABLED")
@@ -527,6 +548,10 @@ ev:SetScript("OnEvent", function(_, event, ...)
             if StealHistoryDB[k] == nil then StealHistoryDB[k] = v end
         end
         db = StealHistoryDB
+        if not db.total then  -- première fois : total des pièces déjà dans l'historique
+            db.total = 0
+            for _, e in ipairs(db.history) do db.total = db.total + (e.money or 0) end
+        end
         RegisterPanel()
         PlaceMinimapButton()
         mm:SetShown(not db.minimap.hide)
@@ -535,27 +560,22 @@ ev:SetScript("OnEvent", function(_, event, ...)
         local _, target, _, spellID = ...
         if spellID == PICK_POCKET then
             castAt = GetTime()
+            moneyBefore = GetMoney()
             castTarget = (target and target ~= "") and target or UnitName("target")
         end
     elseif event == "UNIT_SPELLCAST_FAILED" then
         local _, _, spellID = ...
         if spellID == PICK_POCKET then castAt = 0 end
-    elseif event == "LOOT_OPENED" then
+    elseif event == "LOOT_READY" or event == "LOOT_OPENED" then
         OnLootOpened()
-    elseif event == "LOOT_SLOT_CLEARED" then
-        local s = stealing and slots[...]
-        if s then
-            slots[...] = nil
-            Add(s)
-            if db.autoShow then frame:Show() end
-        end
+    elseif event == "CHAT_MSG_LOOT" then
+        if InWindow() then RecordLoot(...) end
     elseif event == "PLAYER_MONEY" then
         if InWindow() then
             local gained = GetMoney() - moneyBefore
             moneyBefore = GetMoney()
             if gained > 0 then
                 Add({ money = gained })
-                if db.autoShow then frame:Show() end
             end
         end
     elseif event == "LOOT_CLOSED" then
@@ -573,7 +593,7 @@ SlashCmdList.STEALHISTORY = function(msg)
     if msg == "options" or msg == "config" then
         OpenPanel()
     elseif msg == "clear" then
-        wipe(db.history); Refresh()
+        wipe(db.history); db.total = 0; Refresh()
         Print(T("historique vidé.", "history cleared."))
     elseif msg == "minimap" then
         SetMinimapShown(db.minimap.hide)
