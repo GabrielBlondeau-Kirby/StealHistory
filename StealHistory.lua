@@ -15,11 +15,12 @@ local COIN_ICON = "Interface\\Icons\\INV_Misc_Coin_01"
 
 local BACKDROP_TEMPLATE = BackdropTemplateMixin and "BackdropTemplate" or nil
 
--- visibility : "always" (tout le temps), "nocombat" (cachée en combat),
--- "fade" (en combat, transparence combatAlpha et taille combatScale).
+-- visibility : "always" (tout le temps) ou "nocombat" (cachée en combat).
+-- combatReduce : avec "always", en combat la fenêtre passe à combatAlpha
+-- et combatScale.
 local DEFAULTS = {
     max = 5, replaceChat = true, autoShow = false,
-    alpha = 100, visibility = "always", combatAlpha = 40, combatScale = 70,
+    alpha = 100, visibility = "always", combatReduce = false, combatAlpha = 40, combatScale = 70,
     minimap = { angle = 200, hide = false },
     history = {},
 }
@@ -154,7 +155,7 @@ end
 local inCombat = false
 local function ApplyVisibility()
     holder:SetShown(not (inCombat and db.visibility == "nocombat"))
-    local reduced = inCombat and db.visibility == "fade"
+    local reduced = inCombat and db.visibility == "always" and db.combatReduce
     holder:SetAlpha((reduced and db.combatAlpha or db.alpha) / 100)
     frame:SetScale(reduced and db.combatScale / 100 or 1)
     Place()
@@ -404,35 +405,47 @@ local visTitle = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 visTitle:SetPoint("TOPLEFT", cbMinimap, "BOTTOMLEFT", 4, -16)
 visTitle:SetText(L.VISIBILITY)
 
-local VIS = {
-    { "always",   L.VIS_ALWAYS },
-    { "nocombat", L.VIS_NOCOMBAT },
-    { "fade",     L.VIS_FADE },
-}
-local anchor, visBoxes = visTitle, {}
-for i, v in ipairs(VIS) do
-    local cb = CheckBox(anchor, i == 1 and -4 or 0, i == 1 and -4 or 0, v[2],
-        function() return db.visibility == v[1] end,
+-- « Tout le temps » / « Hors combat » s'excluent ; sous « Tout le temps »,
+-- la réduction en combat et ses deux réglages (grisés sinon).
+local visBoxes, reduceWidgets = {}, {}
+local function UpdateVisibilityOptions()
+    for _, b in ipairs(visBoxes) do b:SetChecked(b.mode == db.visibility) end
+    local on = db.visibility == "always"
+    for _, w in ipairs(reduceWidgets) do
+        w:SetAlpha(on and 1 or 0.4)
+        w:EnableMouse(on)
+    end
+end
+local function VisBox(anchor, x, y, mode, label)
+    local cb = CheckBox(anchor, x, y, label,
+        function() return db.visibility == mode end,
         function()
-            db.visibility = v[1]
-            for _, b in ipairs(visBoxes) do b:SetChecked(b.mode == db.visibility) end
+            db.visibility = mode
+            UpdateVisibilityOptions()
             ApplyVisibility()
         end)
-    cb.mode = v[1]
-    visBoxes[i] = cb
-    anchor = cb
+    cb.mode = mode
+    visBoxes[#visBoxes + 1] = cb
+    return cb
 end
 
-local sCombat = Slider(anchor, 4, -24, 0, 100, 5,
+local cbAlways = VisBox(visTitle, -4, -4, "always", L.VIS_ALWAYS)
+local cbReduce = CheckBox(cbAlways, 24, -2, L.VIS_FADE,
+    function() return db.combatReduce end,
+    function(v) db.combatReduce = v; ApplyVisibility() end)
+local sCombat = Slider(cbReduce, 8, -24, 0, 100, 5,
     function(v) return L.COMBAT_OPACITY:format(v) end, "combatAlpha",
     ApplyVisibility)
 local sScale = Slider(sCombat, 0, -36, 50, 100, 5,
     function(v) return L.COMBAT_SIZE:format(v) end, "combatScale",
     ApplyVisibility)
+reduceWidgets = { cbReduce, sCombat, sScale }
+local cbNoCombat = VisBox(sScale, -32, -24, "nocombat", L.VIS_NOCOMBAT)
+refreshers[#refreshers + 1] = UpdateVisibilityOptions
 
 local clear = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
 clear:SetSize(180, 24)
-clear:SetPoint("TOPLEFT", sScale, "BOTTOMLEFT", -4, -30)
+clear:SetPoint("TOPLEFT", cbNoCombat, "BOTTOMLEFT", 4, -20)
 clear:SetText(L.CLEAR)
 clear:SetScript("OnClick", function() wipe(db.history); db.total = 0; Refresh() end)
 
@@ -554,6 +567,9 @@ ev:SetScript("OnEvent", function(_, event, ...)
             if StealHistoryDB[k] == nil then StealHistoryDB[k] = v end
         end
         db = StealHistoryDB
+        if db.visibility == "fade" then  -- ancien 3e mode -> case à part
+            db.visibility, db.combatReduce = "always", true
+        end
         if not db.total then  -- première fois : total des pièces déjà dans l'historique
             db.total = 0
             for _, e in ipairs(db.history) do db.total = db.total + (e.money or 0) end
