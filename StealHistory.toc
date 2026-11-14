@@ -2,9 +2,10 @@
 ## Title: StealHistory
 ## Notes: History of what you stole with Pick Pocket, in a loot-style window.
 ## Notes-frFR: Historique de ce que vous avez volé avec Vol à la tire, dans une fenêtre façon butin.
-## IconTexture: Interface\Icons\INV_Misc_Bag_11
+## IconTexture: Interface\AddOns\StealHistory\Media\icon
 ## Author: Kirbye
 ## Version: @project-version@
 ## SavedVariablesPerCharacter: StealHistoryDB
 
+Locales.lua
 StealHistory.lua
