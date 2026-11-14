@@ -21,7 +21,8 @@ Addon WoW pour voleur : garde l'historique de ce qui a été volé avec
 - Nombre de vols gardés : 1 à 20 (5 par défaut).
 - Transparence de la fenêtre (10 à 100 %).
 - Visibilité : tout le temps, hors combat seulement (cachée en combat), ou en
-  combat avec une transparence réduite (réglable, 40 % par défaut).
+  combat plus petite et plus transparente (taille 70 % et transparence 40 %
+  par défaut, réglables).
 - Icône autour de la minimap.
 - Chat : « Vol le butin : x » au lieu de « Vous recevez le butin : x »
   (objets et pièces).

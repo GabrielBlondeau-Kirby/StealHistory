@@ -18,10 +18,10 @@ local STOLE = T("Vol le butin : %s", "Pickpocketed: %s")
 local BACKDROP_TEMPLATE = BackdropTemplateMixin and "BackdropTemplate" or nil
 
 -- visibility : "always" (tout le temps), "nocombat" (cachée en combat),
--- "fade" (en combat, transparence combatAlpha au lieu de alpha).
+-- "fade" (en combat, transparence combatAlpha et taille combatScale).
 local DEFAULTS = {
     max = 5, replaceChat = true, autoShow = false,
-    alpha = 100, visibility = "always", combatAlpha = 40,
+    alpha = 100, visibility = "always", combatAlpha = 40, combatScale = 70,
     minimap = { angle = 200, hide = false },
     history = {},
 }
@@ -120,14 +120,24 @@ local ROW_H, WIDTH = 44, 240
 local holder = CreateFrame("Frame", nil, UIParent)
 holder:SetAllPoints(UIParent)
 
+local frame = CreateFrame("Frame", "StealHistoryFrame", holder, BACKDROP_TEMPLATE)
+
+-- La position est sauvée en unités d'UIParent : on la divise par l'échelle
+-- pour que la fenêtre réduite reste au même endroit.
+local function Place()
+    local p, s = db.pos or { "CENTER", "CENTER", 0, 0 }, frame:GetScale()
+    frame:ClearAllPoints()
+    frame:SetPoint(p[1], UIParent, p[2], p[3] / s, p[4] / s)
+end
+
 local inCombat = false
 local function ApplyVisibility()
     holder:SetShown(not (inCombat and db.visibility == "nocombat"))
-    local a = (inCombat and db.visibility == "fade") and db.combatAlpha or db.alpha
-    holder:SetAlpha(a / 100)
+    local reduced = inCombat and db.visibility == "fade"
+    holder:SetAlpha((reduced and db.combatAlpha or db.alpha) / 100)
+    frame:SetScale(reduced and db.combatScale / 100 or 1)
+    Place()
 end
-
-local frame = CreateFrame("Frame", "StealHistoryFrame", holder, BACKDROP_TEMPLATE)
 frame:SetSize(WIDTH, 120)
 frame:SetPoint("CENTER")
 frame:SetFrameStrata("DIALOG")
@@ -139,7 +149,8 @@ frame:SetScript("OnDragStart", frame.StartMoving)
 frame:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
     local point, _, rel, x, y = self:GetPoint()
-    db.pos = { point, rel, x, y }
+    local s = self:GetScale()
+    db.pos = { point, rel, x * s, y * s }
 end)
 frame:SetBackdrop({
     bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -356,7 +367,7 @@ visTitle:SetText(T("Visibilité", "Visibility"))
 local VIS = {
     { "always",   T("Tout le temps", "Always") },
     { "nocombat", T("Hors combat seulement (cachée en combat)", "Out of combat only (hidden in combat)") },
-    { "fade",     T("En combat : transparence réduite", "In combat: faded") },
+    { "fade",     T("En combat : plus petite et plus transparente", "In combat: smaller and faded") },
 }
 local anchor, visBoxes = visTitle, {}
 for i, v in ipairs(VIS) do
@@ -375,10 +386,13 @@ end
 local sCombat = Slider(anchor, 4, -24, 0, 100, 5,
     function(v) return T("Transparence en combat : ", "Combat opacity: ") .. v .. " %" end, "combatAlpha",
     ApplyVisibility)
+local sScale = Slider(sCombat, 0, -36, 50, 100, 5,
+    function(v) return T("Taille en combat : ", "Combat size: ") .. v .. " %" end, "combatScale",
+    ApplyVisibility)
 
 local clear = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
 clear:SetSize(180, 24)
-clear:SetPoint("TOPLEFT", sCombat, "BOTTOMLEFT", -4, -30)
+clear:SetPoint("TOPLEFT", sScale, "BOTTOMLEFT", -4, -30)
 clear:SetText(T("Vider l'historique", "Clear history"))
 clear:SetScript("OnClick", function() wipe(db.history); Refresh() end)
 
@@ -499,10 +513,6 @@ ev:SetScript("OnEvent", function(_, event, ...)
             if StealHistoryDB[k] == nil then StealHistoryDB[k] = v end
         end
         db = StealHistoryDB
-        if db.pos then
-            frame:ClearAllPoints()
-            frame:SetPoint(db.pos[1], UIParent, db.pos[2], db.pos[3], db.pos[4])
-        end
         RegisterPanel()
         PlaceMinimapButton()
         mm:SetShown(not db.minimap.hide)
@@ -555,7 +565,7 @@ SlashCmdList.STEALHISTORY = function(msg)
         SetMinimapShown(db.minimap.hide)
     elseif msg == "reset" then
         db.pos = nil
-        frame:ClearAllPoints(); frame:SetPoint("CENTER")
+        Place()
     else
         Toggle()
     end
