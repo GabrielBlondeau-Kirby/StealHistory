@@ -1,0 +1,4 @@
+package-as: StealHistory
+
+ignore:
+  - README.md
