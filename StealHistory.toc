@@ -7,4 +7,5 @@
 ## Version: @project-version@
 ## SavedVariablesPerCharacter: StealHistoryDB
 
+Locales.lua
 StealHistory.lua

@@ -31,3 +31,9 @@ Addon WoW pour voleur : garde l'historique de ce qui a été volé avec
 - Ouvrir la fenêtre après chaque vol.
 
 L'historique est propre à chaque personnage.
+
+## Langues
+
+Anglais, français, allemand, espagnol, italien, portugais (Brésil), russe,
+coréen, chinois simplifié et traditionnel, selon la langue du jeu. Les textes
+sont dans `Locales.lua`.

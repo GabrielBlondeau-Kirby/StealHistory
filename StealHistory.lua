@@ -3,7 +3,8 @@
 --  2. Remplace dans le chat « Vous recevez le butin : x » par « Vol le butin : x ».
 --  3. Fenêtre façon cadre de butin avec les N derniers vols (5 par défaut).
 
-local ADDON = ...
+local ADDON, ns = ...
+local L = ns.L
 local _, class = UnitClass("player")
 if class ~= "ROGUE" then return end
 
@@ -11,9 +12,6 @@ local PICK_POCKET = 921
 local ICON = "Interface\\AddOns\\StealHistory\\Media\\icon"
 local COIN_ICON = "Interface\\Icons\\INV_Misc_Coin_01"
 
-local FR = GetLocale() == "frFR"
-local function T(fr, en) return FR and fr or en end
-local STOLE = T("Vol le butin : %s", "Pickpocketed: %s")
 
 local BACKDROP_TEMPLATE = BackdropTemplateMixin and "BackdropTemplate" or nil
 
@@ -106,7 +104,7 @@ local function ChatFilter(_, event, msg, ...)
         local what, count = msg:match(pat)
         if what then
             if count then what = what .. " x" .. count end
-            return false, STOLE:format(what), ...
+            return false, L.STOLE:format(what), ...
         end
     end
     return false
@@ -188,25 +186,35 @@ tinsert(UISpecialFrames, "StealHistoryFrame")  -- Échap ferme la fenêtre
 local portrait = frame:CreateTexture(nil, "OVERLAY")
 portrait:SetSize(46, 46)
 portrait:SetPoint("TOPLEFT", -14, 14)
-if SetPortraitToTexture then SetPortraitToTexture(portrait, ICON) else portrait:SetTexture(ICON) end
-local ring = frame:CreateTexture(nil, "OVERLAY", nil, 1)
-ring:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
-ring:SetSize(80, 80)
-ring:SetPoint("TOPLEFT", portrait, "TOPLEFT", -6, 5)
+portrait:SetTexture(ICON)  -- icône carrée telle quelle, sans cercle
 
+-- Bandeau du titre en trois morceaux (bouts fixes, milieu étiré) : il
+-- s'élargit avec le texte sans déformer ses extrémités.
+local HEADER_TEX = "Interface\\DialogFrame\\UI-DialogBox-Header"
 local header = frame:CreateTexture(nil, "ARTWORK")
-header:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Header")
-header:SetSize(220, 64)
+header:SetTexture(HEADER_TEX)
+header:SetTexCoord(0.31, 0.67, 0, 0.63)
+header:SetSize(100, 40)
 header:SetPoint("TOP", 12, 12)
+local headerL = frame:CreateTexture(nil, "ARTWORK")
+headerL:SetTexture(HEADER_TEX)
+headerL:SetTexCoord(0.21, 0.31, 0, 0.63)
+headerL:SetSize(30, 40)
+headerL:SetPoint("RIGHT", header, "LEFT")
+local headerR = frame:CreateTexture(nil, "ARTWORK")
+headerR:SetTexture(HEADER_TEX)
+headerR:SetTexCoord(0.67, 0.77, 0, 0.63)
+headerR:SetSize(30, 40)
+headerR:SetPoint("LEFT", header, "RIGHT")
 local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 title:SetPoint("TOP", header, "TOP", 0, -14)
-local TITLE = T("Vols à la tire", "Pickpockets")
+local TITLE = L.TITLE
 
 -- Titre + total des pièces volées à sa droite ; le bandeau suit la largeur.
 local function UpdateTitle()
     local total = db.total or 0
     title:SetText(total > 0 and (TITLE .. "   |cffffffff" .. Coins(total) .. "|r") or TITLE)
-    header:SetWidth(math.max(160, title:GetStringWidth() + 70))
+    header:SetWidth(math.max(60, title:GetStringWidth() + 16))
 end
 
 local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
@@ -214,7 +222,7 @@ close:SetPoint("TOPRIGHT", -4, -4)
 
 local empty = frame:CreateFontString(nil, "OVERLAY", "GameFontDisable")
 empty:SetPoint("TOP", 0, -50)
-empty:SetText(T("Aucun vol pour l'instant.", "Nothing stolen yet."))
+empty:SetText(L.EMPTY)
 
 local rows = {}
 
@@ -329,8 +337,7 @@ ptitle:SetText("StealHistory")
 
 local psub = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 psub:SetPoint("TOPLEFT", ptitle, "BOTTOMLEFT", 0, -8)
-psub:SetText(T("Historique de Vol à la tire. /sh ouvre la fenêtre.",
-               "Pick Pocket history. /sh opens the window."))
+psub:SetText(L.SUBTITLE)
 
 local refreshers = {}
 
@@ -372,36 +379,35 @@ end
 local function Option(key) return function() return db[key] end, function(v) db[key] = v end end
 
 local sCount = Slider(psub, 4, -30, 1, 20, 1,
-    function(v) return T("Vols gardés : ", "Steals kept: ") .. v end, "max",
+    function(v) return L.KEPT:format(v) end, "max",
     function(v)
         for i = #db.history, v + 1, -1 do db.history[i] = nil end
         Refresh()
     end)
 
 local sAlpha = Slider(sCount, 0, -36, 10, 100, 5,
-    function(v) return T("Transparence de la fenêtre : ", "Window opacity: ") .. v .. " %" end, "alpha",
+    function(v) return L.OPACITY:format(v) end, "alpha",
     ApplyVisibility)
 
 local cbChat = CheckBox(sAlpha, -4, -30,
-    T("Chat : « Vol le butin : x » au lieu du message normal",
-      "Chat: \"Pickpocketed: x\" instead of the normal message"), Option("replaceChat"))
+    L.CHAT_OPT:format(L.STOLE:format("x")), Option("replaceChat"))
 local cbShow = CheckBox(cbChat, 0, -4,
-    T("Ouvrir la fenêtre après chaque vol", "Open the window after each steal"), Option("autoShow"))
+    L.AUTOSHOW, Option("autoShow"))
 local SetMinimapShown  -- défini avec le bouton de la minimap
 local cbMinimap = CheckBox(cbShow, 0, -4,
-    T("Icône autour de la minimap", "Minimap icon"),
+    L.MINIMAP,
     function() return not db.minimap.hide end,
     function(v) SetMinimapShown(v) end)
 
 -- Visibilité : trois cases qui se comportent comme des boutons radio.
 local visTitle = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 visTitle:SetPoint("TOPLEFT", cbMinimap, "BOTTOMLEFT", 4, -16)
-visTitle:SetText(T("Visibilité", "Visibility"))
+visTitle:SetText(L.VISIBILITY)
 
 local VIS = {
-    { "always",   T("Tout le temps", "Always") },
-    { "nocombat", T("Hors combat seulement (cachée en combat)", "Out of combat only (hidden in combat)") },
-    { "fade",     T("En combat : plus petite et plus transparente", "In combat: smaller and faded") },
+    { "always",   L.VIS_ALWAYS },
+    { "nocombat", L.VIS_NOCOMBAT },
+    { "fade",     L.VIS_FADE },
 }
 local anchor, visBoxes = visTitle, {}
 for i, v in ipairs(VIS) do
@@ -418,22 +424,22 @@ for i, v in ipairs(VIS) do
 end
 
 local sCombat = Slider(anchor, 4, -24, 0, 100, 5,
-    function(v) return T("Transparence en combat : ", "Combat opacity: ") .. v .. " %" end, "combatAlpha",
+    function(v) return L.COMBAT_OPACITY:format(v) end, "combatAlpha",
     ApplyVisibility)
 local sScale = Slider(sCombat, 0, -36, 50, 100, 5,
-    function(v) return T("Taille en combat : ", "Combat size: ") .. v .. " %" end, "combatScale",
+    function(v) return L.COMBAT_SIZE:format(v) end, "combatScale",
     ApplyVisibility)
 
 local clear = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
 clear:SetSize(180, 24)
 clear:SetPoint("TOPLEFT", sScale, "BOTTOMLEFT", -4, -30)
-clear:SetText(T("Vider l'historique", "Clear history"))
+clear:SetText(L.CLEAR)
 clear:SetScript("OnClick", function() wipe(db.history); db.total = 0; Refresh() end)
 
 local show = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
 show:SetSize(180, 24)
 show:SetPoint("LEFT", clear, "RIGHT", 10, 0)
-show:SetText(T("Afficher la fenêtre", "Show window"))
+show:SetText(L.SHOW)
 show:SetScript("OnClick", Toggle)
 
 panel:SetScript("OnShow", function() for _, f in ipairs(refreshers) do f() end end)
@@ -513,9 +519,9 @@ mm:SetScript("OnDragStop", function(self) self:SetScript("OnUpdate", nil) end)
 mm:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_LEFT")
     GameTooltip:SetText("StealHistory", 0.2, 1, 0.6)
-    GameTooltip:AddLine(T("Clic gauche : historique des vols", "Left-click: steal history"), 1, 1, 1)
-    GameTooltip:AddLine(T("Clic droit : options", "Right-click: options"), 1, 1, 1)
-    GameTooltip:AddLine(T("Glisser : déplacer autour de la minimap", "Drag: move around the minimap"), 0.6, 0.6, 0.6)
+    GameTooltip:AddLine(L.MM_LEFT, 1, 1, 1)
+    GameTooltip:AddLine(L.MM_RIGHT, 1, 1, 1)
+    GameTooltip:AddLine(L.MM_DRAG, 0.6, 0.6, 0.6)
     GameTooltip:Show()
 end)
 mm:SetScript("OnLeave", GameTooltip_Hide)
@@ -594,7 +600,7 @@ SlashCmdList.STEALHISTORY = function(msg)
         OpenPanel()
     elseif msg == "clear" then
         wipe(db.history); db.total = 0; Refresh()
-        Print(T("historique vidé.", "history cleared."))
+        Print(L.CLEARED)
     elseif msg == "minimap" then
         SetMinimapShown(db.minimap.hide)
     elseif msg == "reset" then
