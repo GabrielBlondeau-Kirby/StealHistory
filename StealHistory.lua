@@ -42,6 +42,7 @@ local windowEnd = 0        -- fin de la période où les messages du chat sont �
 local moneyBefore = 0      -- argent au moment du sort
 
 local Refresh  -- fenêtre, définie plus bas
+local debug = false  -- /sh debug
 
 local function Add(entry)
     entry.target = castTarget
@@ -49,8 +50,15 @@ local function Add(entry)
     table.insert(db.history, 1, entry)
     for i = #db.history, db.max + 1, -1 do db.history[i] = nil end
     if entry.money then db.total = (db.total or 0) + entry.money end
-    if Refresh then Refresh() end
-    if db.autoShow then StealHistoryFrame:Show() end
+    -- On ouvre d'abord : OnShow remplit la liste, et une erreur dans la mise
+    -- à jour ne peut plus empêcher l'ouverture.
+    local f = StealHistoryFrame
+    if db.autoShow and not f:IsShown() then f:Show() else Refresh() end
+    if debug then
+        Print(("vol enregistré (%s) | autoShow=%s, fenêtre=%s, visible=%s, alpha=%.2f, combat=%s"):format(
+            entry.link or (entry.money .. " cuivre"), tostring(db.autoShow), tostring(f:IsShown()),
+            tostring(f:IsVisible()), f:GetEffectiveAlpha(), tostring(InCombatLockdown())))
+    end
 end
 
 -- Vol en cours : sort lancé il y a moins de 2 s, fenêtre de butin ouverte,
@@ -325,6 +333,9 @@ Refresh = function()
 end
 
 frame:SetScript("OnShow", Refresh)
+frame:SetScript("OnHide", function()
+    if debug then Print("fenêtre fermée par :\n" .. debugstack(2, 4, 0)) end
+end)
 
 local function Toggle()
     frame:SetShown(not frame:IsShown())
@@ -622,6 +633,9 @@ SlashCmdList.STEALHISTORY = function(msg)
     elseif msg == "clear" then
         wipe(db.history); db.total = 0; Refresh()
         Print(L.CLEARED)
+    elseif msg == "debug" then
+        debug = not debug
+        Print("debug " .. (debug and "on" or "off"))
     elseif msg == "minimap" then
         SetMinimapShown(db.minimap.hide)
     elseif msg == "reset" then
