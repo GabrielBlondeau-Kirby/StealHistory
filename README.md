@@ -10,12 +10,19 @@ Addon WoW pour voleur : garde l'historique de ce qui a été volé avec
 - Glisser la fenêtre pour la déplacer. `/sh reset` : la remettre au centre.
 - Survol d'une ligne : info-bulle de l'objet, cible volée et date.
   Maj + clic : lier l'objet dans le chat.
+- Icône autour de la minimap : clic gauche ouvre / ferme la fenêtre, clic
+  droit ouvre les options, glisser la fait tourner.
 - `/sh options` : options (aussi dans Échap → Options → AddOns).
-  `/sh clear` : vider l'historique.
+  `/sh clear` : vider l'historique. `/sh minimap` : afficher / masquer l'icône
+  de la minimap.
 
 ### Options
 
 - Nombre de vols gardés : 1 à 20 (5 par défaut).
+- Transparence de la fenêtre (10 à 100 %).
+- Visibilité : tout le temps, hors combat seulement (cachée en combat), ou en
+  combat avec une transparence réduite (réglable, 40 % par défaut).
+- Icône autour de la minimap.
 - Chat : « Vol le butin : x » au lieu de « Vous recevez le butin : x »
   (objets et pièces).
 - Ouvrir la fenêtre après chaque vol.

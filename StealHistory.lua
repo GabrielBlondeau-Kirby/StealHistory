@@ -8,7 +8,7 @@ local _, class = UnitClass("player")
 if class ~= "ROGUE" then return end
 
 local PICK_POCKET = 921
-local ICON = "Interface\\Icons\\INV_Misc_Bag_11"
+local ICON = "Interface\\AddOns\\StealHistory\\Media\\icon"
 local COIN_ICON = "Interface\\Icons\\INV_Misc_Coin_01"
 
 local FR = GetLocale() == "frFR"
@@ -17,7 +17,14 @@ local STOLE = T("Vol le butin : %s", "Pickpocketed: %s")
 
 local BACKDROP_TEMPLATE = BackdropTemplateMixin and "BackdropTemplate" or nil
 
-local DEFAULTS = { max = 5, replaceChat = true, autoShow = false, history = {} }
+-- visibility : "always" (tout le temps), "nocombat" (cachée en combat),
+-- "fade" (en combat, transparence combatAlpha au lieu de alpha).
+local DEFAULTS = {
+    max = 5, replaceChat = true, autoShow = false,
+    alpha = 100, visibility = "always", combatAlpha = 40,
+    minimap = { angle = 200, hide = false },
+    history = {},
+}
 local db = DEFAULTS
 
 local function Print(msg)
@@ -108,7 +115,19 @@ addFilter("CHAT_MSG_MONEY", ChatFilter)
 
 local ROW_H, WIDTH = 44, 240
 
-local frame = CreateFrame("Frame", "StealHistoryFrame", UIParent, BACKDROP_TEMPLATE)
+-- Le conteneur porte la visibilité / transparence ; la fenêtre, elle, garde
+-- son état ouvert / fermé choisi par le joueur.
+local holder = CreateFrame("Frame", nil, UIParent)
+holder:SetAllPoints(UIParent)
+
+local inCombat = false
+local function ApplyVisibility()
+    holder:SetShown(not (inCombat and db.visibility == "nocombat"))
+    local a = (inCombat and db.visibility == "fade") and db.combatAlpha or db.alpha
+    holder:SetAlpha(a / 100)
+end
+
+local frame = CreateFrame("Frame", "StealHistoryFrame", holder, BACKDROP_TEMPLATE)
 frame:SetSize(WIDTH, 120)
 frame:SetPoint("CENTER")
 frame:SetFrameStrata("DIALOG")
@@ -270,47 +289,96 @@ psub:SetText(T("Historique de Vol à la tire. /sh ouvre la fenêtre.",
 
 local refreshers = {}
 
-local slider = CreateFrame("Slider", "StealHistorySlider", panel, "OptionsSliderTemplate")
-slider:SetPoint("TOPLEFT", psub, "BOTTOMLEFT", 4, -30)
-slider:SetWidth(220)
-slider:SetMinMaxValues(1, 20)
-slider:SetValueStep(1)
-if slider.SetObeyStepOnDrag then slider:SetObeyStepOnDrag(true) end
-_G.StealHistorySliderLow:SetText("1")
-_G.StealHistorySliderHigh:SetText("20")
-local function SliderLabel(v)
-    _G.StealHistorySliderText:SetText(T("Vols gardés : ", "Steals kept: ") .. v)
+local sliderCount = 0
+local function Slider(anchor, x, y, min, max, step, label, key, onChange)
+    sliderCount = sliderCount + 1
+    local name = "StealHistorySlider" .. sliderCount
+    local s = CreateFrame("Slider", name, panel, "OptionsSliderTemplate")
+    s:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", x, y)
+    s:SetWidth(220)
+    s:SetMinMaxValues(min, max)
+    s:SetValueStep(step)
+    if s.SetObeyStepOnDrag then s:SetObeyStepOnDrag(true) end
+    _G[name .. "Low"]:SetText(min)
+    _G[name .. "High"]:SetText(max)
+    local function Label(v) _G[name .. "Text"]:SetText(label(v)) end
+    s:SetScript("OnValueChanged", function(_, v)
+        v = math.floor(v / step + 0.5) * step
+        Label(v)
+        if v == db[key] then return end
+        db[key] = v
+        onChange(v)
+    end)
+    refreshers[#refreshers + 1] = function() s:SetValue(db[key]); Label(db[key]) end
+    return s
 end
-slider:SetScript("OnValueChanged", function(_, v)
-    v = math.floor(v + 0.5)
-    SliderLabel(v)
-    if v == db.max then return end
-    db.max = v
-    for i = #db.history, v + 1, -1 do db.history[i] = nil end
-    Refresh()
-end)
-refreshers[#refreshers + 1] = function() slider:SetValue(db.max); SliderLabel(db.max) end
 
-local function CheckBox(anchor, label, key, y)
+local function CheckBox(anchor, x, y, label, get, set)
     local cb = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
     cb:SetSize(26, 26)
-    cb:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, y or -12)
+    cb:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", x, y)
     local text = cb:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     text:SetPoint("LEFT", cb, "RIGHT", 4, 1)
     text:SetText(label)
-    cb:SetScript("OnClick", function(self) db[key] = self:GetChecked() and true or false end)
-    refreshers[#refreshers + 1] = function() cb:SetChecked(db[key]) end
+    cb:SetScript("OnClick", function(self) set(self:GetChecked() and true or false) end)
+    refreshers[#refreshers + 1] = function() cb:SetChecked(get()) end
     return cb
 end
+local function Option(key) return function() return db[key] end, function(v) db[key] = v end end
 
-local cbChat = CheckBox(slider, T("Chat : « Vol le butin : x » au lieu du message normal",
-                                  "Chat: \"Pickpocketed: x\" instead of the normal message"), "replaceChat", -30)
-cbChat:SetPoint("TOPLEFT", slider, "BOTTOMLEFT", -4, -30)
-local cbShow = CheckBox(cbChat, T("Ouvrir la fenêtre après chaque vol", "Open the window after each steal"), "autoShow")
+local sCount = Slider(psub, 4, -30, 1, 20, 1,
+    function(v) return T("Vols gardés : ", "Steals kept: ") .. v end, "max",
+    function(v)
+        for i = #db.history, v + 1, -1 do db.history[i] = nil end
+        Refresh()
+    end)
+
+local sAlpha = Slider(sCount, 0, -36, 10, 100, 5,
+    function(v) return T("Transparence de la fenêtre : ", "Window opacity: ") .. v .. " %" end, "alpha",
+    ApplyVisibility)
+
+local cbChat = CheckBox(sAlpha, -4, -30,
+    T("Chat : « Vol le butin : x » au lieu du message normal",
+      "Chat: \"Pickpocketed: x\" instead of the normal message"), Option("replaceChat"))
+local cbShow = CheckBox(cbChat, 0, -4,
+    T("Ouvrir la fenêtre après chaque vol", "Open the window after each steal"), Option("autoShow"))
+local SetMinimapShown  -- défini avec le bouton de la minimap
+local cbMinimap = CheckBox(cbShow, 0, -4,
+    T("Icône autour de la minimap", "Minimap icon"),
+    function() return not db.minimap.hide end,
+    function(v) SetMinimapShown(v) end)
+
+-- Visibilité : trois cases qui se comportent comme des boutons radio.
+local visTitle = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+visTitle:SetPoint("TOPLEFT", cbMinimap, "BOTTOMLEFT", 4, -16)
+visTitle:SetText(T("Visibilité", "Visibility"))
+
+local VIS = {
+    { "always",   T("Tout le temps", "Always") },
+    { "nocombat", T("Hors combat seulement (cachée en combat)", "Out of combat only (hidden in combat)") },
+    { "fade",     T("En combat : transparence réduite", "In combat: faded") },
+}
+local anchor, visBoxes = visTitle, {}
+for i, v in ipairs(VIS) do
+    local cb = CheckBox(anchor, i == 1 and -4 or 0, i == 1 and -4 or 0, v[2],
+        function() return db.visibility == v[1] end,
+        function()
+            db.visibility = v[1]
+            for _, b in ipairs(visBoxes) do b:SetChecked(b.mode == db.visibility) end
+            ApplyVisibility()
+        end)
+    cb.mode = v[1]
+    visBoxes[i] = cb
+    anchor = cb
+end
+
+local sCombat = Slider(anchor, 4, -24, 0, 100, 5,
+    function(v) return T("Transparence en combat : ", "Combat opacity: ") .. v .. " %" end, "combatAlpha",
+    ApplyVisibility)
 
 local clear = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
 clear:SetSize(180, 24)
-clear:SetPoint("TOPLEFT", cbShow, "BOTTOMLEFT", 4, -24)
+clear:SetPoint("TOPLEFT", sCombat, "BOTTOMLEFT", -4, -30)
 clear:SetText(T("Vider l'historique", "Clear history"))
 clear:SetScript("OnClick", function() wipe(db.history); Refresh() end)
 
@@ -342,6 +410,69 @@ local function OpenPanel()
 end
 
 ---------------------------------------------------------------------------
+-- 5. Icône autour de la minimap
+-- Clic gauche : fenêtre. Clic droit : options. Glisser : tourner autour.
+---------------------------------------------------------------------------
+
+local mm = CreateFrame("Button", "StealHistoryMinimapButton", Minimap)
+mm:SetSize(31, 31)
+mm:SetFrameStrata("MEDIUM")
+mm:SetFrameLevel(8)
+mm:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+mm:RegisterForDrag("LeftButton")
+mm:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+
+local mmBg = mm:CreateTexture(nil, "BACKGROUND")
+mmBg:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
+mmBg:SetSize(20, 20)
+mmBg:SetPoint("TOPLEFT", 7, -5)
+
+local mmIcon = mm:CreateTexture(nil, "ARTWORK")
+mmIcon:SetSize(17, 17)
+mmIcon:SetPoint("TOPLEFT", 7, -6)
+if SetPortraitToTexture then SetPortraitToTexture(mmIcon, ICON) else mmIcon:SetTexture(ICON) end
+
+local mmBorder = mm:CreateTexture(nil, "OVERLAY")
+mmBorder:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+mmBorder:SetSize(53, 53)
+mmBorder:SetPoint("TOPLEFT")
+
+local function PlaceMinimapButton()
+    local a = math.rad(db.minimap.angle)
+    local r = Minimap:GetWidth() / 2 + 5
+    mm:ClearAllPoints()
+    mm:SetPoint("CENTER", Minimap, "CENTER", math.cos(a) * r, math.sin(a) * r)
+end
+
+SetMinimapShown = function(shown)
+    db.minimap.hide = not shown
+    mm:SetShown(shown)
+end
+
+mm:SetScript("OnClick", function(_, button)
+    if button == "RightButton" then OpenPanel() else Toggle() end
+end)
+mm:SetScript("OnDragStart", function(self)
+    self:SetScript("OnUpdate", function()
+        local mx, my = Minimap:GetCenter()
+        local px, py = GetCursorPosition()
+        local scale = Minimap:GetEffectiveScale()
+        db.minimap.angle = math.deg(math.atan2(py / scale - my, px / scale - mx))
+        PlaceMinimapButton()
+    end)
+end)
+mm:SetScript("OnDragStop", function(self) self:SetScript("OnUpdate", nil) end)
+mm:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+    GameTooltip:SetText("StealHistory", 0.2, 1, 0.6)
+    GameTooltip:AddLine(T("Clic gauche : historique des vols", "Left-click: steal history"), 1, 1, 1)
+    GameTooltip:AddLine(T("Clic droit : options", "Right-click: options"), 1, 1, 1)
+    GameTooltip:AddLine(T("Glisser : déplacer autour de la minimap", "Drag: move around the minimap"), 0.6, 0.6, 0.6)
+    GameTooltip:Show()
+end)
+mm:SetScript("OnLeave", GameTooltip_Hide)
+
+---------------------------------------------------------------------------
 -- Événements et commande
 ---------------------------------------------------------------------------
 
@@ -353,7 +484,14 @@ ev:RegisterEvent("LOOT_OPENED")
 ev:RegisterEvent("LOOT_SLOT_CLEARED")
 ev:RegisterEvent("LOOT_CLOSED")
 ev:RegisterEvent("PLAYER_MONEY")
+ev:RegisterEvent("PLAYER_REGEN_DISABLED")
+ev:RegisterEvent("PLAYER_REGEN_ENABLED")
 ev:SetScript("OnEvent", function(_, event, ...)
+    if event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
+        inCombat = event == "PLAYER_REGEN_DISABLED"
+        ApplyVisibility()
+        return
+    end
     if event == "ADDON_LOADED" then
         if ... ~= ADDON then return end
         StealHistoryDB = StealHistoryDB or {}
@@ -366,6 +504,9 @@ ev:SetScript("OnEvent", function(_, event, ...)
             frame:SetPoint(db.pos[1], UIParent, db.pos[2], db.pos[3], db.pos[4])
         end
         RegisterPanel()
+        PlaceMinimapButton()
+        mm:SetShown(not db.minimap.hide)
+        ApplyVisibility()
     elseif event == "UNIT_SPELLCAST_SENT" then
         local _, target, _, spellID = ...
         if spellID == PICK_POCKET then
@@ -410,6 +551,8 @@ SlashCmdList.STEALHISTORY = function(msg)
     elseif msg == "clear" then
         wipe(db.history); Refresh()
         Print(T("historique vidé.", "history cleared."))
+    elseif msg == "minimap" then
+        SetMinimapShown(db.minimap.hide)
     elseif msg == "reset" then
         db.pos = nil
         frame:ClearAllPoints(); frame:SetPoint("CENTER")
