@@ -120,7 +120,7 @@ addFilter("CHAT_MSG_MONEY", ChatFilter)
 -- 3. Fenêtre façon cadre de butin
 ---------------------------------------------------------------------------
 
-local ROW_H, WIDTH = 44, 240
+local ROW_H, WIDTH = 44, 290  -- 3 colonnes : icône, nom + cible, heure
 
 -- Somme en pièces avec icônes. GetCoinTextureString n'existe plus sur les
 -- clients récents (déplacée dans C_CurrencyInfo) : on prend ce qui existe.
@@ -263,20 +263,24 @@ local function Row(i)
 
     local nameFrame = r:CreateTexture(nil, "BACKGROUND")
     nameFrame:SetTexture("Interface\\QuestFrame\\UI-QuestItemNameFrame")
-    nameFrame:SetSize(WIDTH - 70, 64)
+    nameFrame:SetSize(WIDTH - 120, 64)
     nameFrame:SetPoint("LEFT", r.icon, "RIGHT", -10, 0)
 
     r.name = r:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     r.name:SetPoint("TOPLEFT", r.icon, "TOPRIGHT", 8, -3)
-    r.name:SetWidth(WIDTH - 95)
+    r.name:SetWidth(WIDTH - 145)
     r.name:SetJustifyH("LEFT")
     r.name:SetWordWrap(false)
 
     r.sub = r:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
     r.sub:SetPoint("TOPLEFT", r.name, "BOTTOMLEFT", 0, -3)
-    r.sub:SetWidth(WIDTH - 95)
+    r.sub:SetWidth(WIDTH - 145)
     r.sub:SetJustifyH("LEFT")
     r.sub:SetWordWrap(false)
+
+    r.time = r:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    r.time:SetPoint("RIGHT", r, "RIGHT", -2, 0)
+    r.time:SetJustifyH("RIGHT")
 
     r.count = r:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
     r.count:SetPoint("BOTTOMRIGHT", r.icon, "BOTTOMRIGHT", -2, 2)
@@ -310,7 +314,8 @@ Refresh = function()
             r.name:SetTextColor(1, 1, 1)
             r.count:SetText("")
         end
-        r.sub:SetText((e.target or "?") .. "  ·  " .. date("%H:%M", e.time))
+        r.sub:SetText(e.target or "?")
+        r.time:SetText(date("%H:%M", e.time))
         r:Show()
     end
     for i = n + 1, #rows do rows[i]:Hide() end
