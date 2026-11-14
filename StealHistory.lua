@@ -26,6 +26,16 @@ local DEFAULTS = {
 }
 local db = DEFAULTS
 
+-- Valeurs « secrètes » des clients récents (noms d'unités en instance,
+-- en combat…) : on ne peut ni les comparer ni les sauvegarder. On les ignore.
+local function Secret(v)
+    return issecretvalue and issecretvalue(v)
+end
+local function Readable(v)
+    if Secret(v) or v == nil or v == "" then return nil end  -- Secret d'abord : comparer une valeur secrète plante
+    return v
+end
+
 local function Print(msg)
     print("|cff33ff99StealHistory|r : " .. msg)
 end
@@ -98,6 +108,7 @@ local PATTERNS = {
 -- avec le ramassage auto, la fenêtre de butin est souvent déjà vide quand
 -- l'addon la lit, alors que le message arrive toujours.
 local function RecordLoot(msg)
+    if Secret(msg) then return end
     for _, pat in ipairs(PATTERNS.CHAT_MSG_LOOT) do
         local link, count = msg:match(pat)
         if link and link:find("|Hitem:") then
@@ -108,7 +119,7 @@ local function RecordLoot(msg)
 end
 
 local function ChatFilter(_, event, msg, ...)
-    if not db.replaceChat or not InWindow() then return false end
+    if not db.replaceChat or not InWindow() or Secret(msg) then return false end
     for _, pat in ipairs(PATTERNS[event]) do
         local what, count = msg:match(pat)
         if what then
@@ -602,7 +613,7 @@ ev:SetScript("OnEvent", function(_, event, ...)
         if spellID == PICK_POCKET then
             castAt = GetTime()
             moneyBefore = GetMoney()
-            castTarget = (target and target ~= "") and target or UnitName("target")
+            castTarget = Readable(target) or Readable((UnitName("target")))
         end
     elseif event == "UNIT_SPELLCAST_FAILED" then
         local _, _, spellID = ...
